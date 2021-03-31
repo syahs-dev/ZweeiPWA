@@ -1,44 +1,47 @@
----
----
+// This is the "Offline page" service worker
 
-self.addEventListener('install', function(e) {  
-  e.waitUntil(caches.open('blog-{{ site.github.build_revision }}').then(function(cache) {
-    return cache.addAll([
-      {% for page in site.pages %}
-      {%- if page.url != '/sw.js' -%} 
-      '{{ page.url | remove: '.html' }}',
-      {%- endif -%}
-      {% endfor %}
-      {% for post in site.posts %}      
-      '{{ post.url }}',     
-      {% endfor %}
-      {% for file in site.static_files %}       
-      '{{ site.baseurl }}{{ file.path }}',    
-      {% endfor %}                
-      'https://stackpath.bootstrapcdn.com/bootstrap/4.1.1/css/bootstrap.min.css',
-      'https://code.jquery.com/jquery-3.3.1.slim.min.js',
-      'https://stackpath.bootstrapcdn.com/bootstrap/4.1.1/js/bootstrap.min.js',
-      'https://cdn.jsdelivr.net/algoliasearch/3/algoliasearch.min.js',
-      'https://cdn.jsdelivr.net/autocomplete.js/0.30.0/autocomplete.jquery.min.js',
-      'https://code.highcharts.com/highcharts.js',      
-    ]);
-  }));
+importScripts('https://storage.googleapis.com/workbox-cdn/releases/5.1.2/workbox-sw.js');
+
+const CACHE = "pwabuilder-page";
+
+// TODO: replace the following with the correct offline fallback page i.e.: const offlineFallbackPage = "offline.html";
+const offlineFallbackPage = "ToDo-replace-this-name.html";
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
-self.addEventListener('activate', function(e) {
-  e.waitUntil(caches.keys().then(function(cacheNames) {
-    return Promise.all(
-      cacheNames.map(function(cacheName) {
-        if (cacheName != 'blog-{{ site.github.build_revision }}') {
-          return caches.delete(cacheName);
+self.addEventListener('install', async (event) => {
+  event.waitUntil(
+    caches.open(CACHE)
+      .then((cache) => cache.add(offlineFallbackPage))
+  );
+});
+
+if (workbox.navigationPreload.isSupported()) {
+  workbox.navigationPreload.enable();
+}
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode === 'navigate') {
+    event.respondWith((async () => {
+      try {
+        const preloadResp = await event.preloadResponse;
+
+        if (preloadResp) {
+          return preloadResp;
         }
-      })
-    );
-  }));
-});
 
-self.addEventListener('fetch', function(e) {
-  e.respondWith(caches.match(e.request).then(function(response) {   
-    return response || fetch(e.request);
-  }));
+        const networkResp = await fetch(event.request);
+        return networkResp;
+      } catch (error) {
+
+        const cache = await caches.open(CACHE);
+        const cachedResp = await cache.match(offlineFallbackPage);
+        return cachedResp;
+      }
+    })());
+  }
 });
